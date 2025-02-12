@@ -1,0 +1,81 @@
+import os
+import torch
+import numpy as np
+import matplotlib.pyplot as plt
+
+torch.manual_seed(111)
+
+def srk_sde_solver(x0, T, N):
+    bs, dim = x0.shape
+    dt = T / N
+    t = torch.linspace(0, T, N + 1)
+    X = torch.zeros(N + 1, bs, dim)
+    X[0] = x0
+
+    for i in range(1, N + 1):
+        W = torch.randn(bs, dim)*dt**0.5
+        mu_0 = -a * X[i - 1]
+
+        X_mid = X[i - 1] + 0.5 * mu_0 * (3 * dt - W ** 2) + sigma * W
+        mu_1 = -a * X_mid
+
+        X[i] = X[i - 1] + 0.5 * (mu_0 + mu_1) * dt + sigma * W
+
+        print("t=%.3f," % (t[i].item()), end='  ')
+        print("X_0.001: %.4f," % (torch.quantile(X[i], 0.001).item()), end='  ')
+        print("X_0.999: %.4f" % (torch.quantile(X[i], 0.999).item()), end='\n')
+
+    return t, X
+
+def plot_data(xt, data_path):
+    # xt:(N_t, N_x, d)
+    data = xt.cpu().numpy()
+
+    # Plot data
+    plt.figure(figsize=(3, 3))
+    plt.scatter(data[:, 0], data[:, 1], s=6)
+    plt.title('Gaussian: $(x_1, x_2)$')
+
+    plt.xlabel("$x_1$")
+    plt.ylabel("$x_2$")
+    plt.xticks(np.linspace(-2, 2, 5))
+    plt.yticks(np.linspace(-2, 2, 5))
+    plt.xlim(-2, 2)
+    plt.ylim(-2, 2)
+
+    plt.savefig(data_path + 'Gaussian.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+if __name__ == "__main__":
+
+    T = 1
+    dim = 20
+    a = 3
+    sigma = 1.5
+    N_in = 20000
+    N_t = 100
+
+    p_x0 = torch.distributions.MultivariateNormal(
+            loc=torch.zeros(dim),
+            covariance_matrix=torch.eye(dim))
+
+    x0 = p_x0.sample([N_in])
+    print("t=0 ", end=' ')
+    print("max:%.4f" % (torch.max(x0).item()), end=' ')
+    print("min:%.4f" % (torch.min(x0).item()), end='\n')
+
+    t, xt = srk_sde_solver(x0, T, N_t)
+
+    # xt:(N_t, N_x, dim)
+    xT = xt[-1]
+    nan_count = torch.sum(torch.isnan(xT))
+    print("The number of 'nan' element:", nan_count.item())
+
+    data_path = './data/'
+    if not os.path.exists(data_path):
+        os.makedirs(data_path)
+
+    # Plot
+    plot_data(xT, data_path)
+    # Data
+    np.save(data_path + 'data.npy', xT.cpu().numpy())
